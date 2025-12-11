@@ -29,7 +29,8 @@ export default async function handler(req: any, res: any) {
   const cleanActiveUsers = () => {
     const now = Date.now();
     for (const [id, lastSeen] of activeUsers.entries()) {
-        if (now - lastSeen > 15000) { // 15s timeout
+        // Increased to 30s to accommodate mobile network latency
+        if (now - lastSeen > 30000) { 
             activeUsers.delete(id);
         }
     }

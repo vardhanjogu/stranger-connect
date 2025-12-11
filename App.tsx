@@ -9,6 +9,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { AdUnit } from './components/AdUnit';
 import { AppState, UserSettings } from './types';
 import { initializePeerSession, terminateSession } from './services/geminiService';
+import { playSound, initAudio } from './services/soundService';
 
 // Analytics global declaration
 declare global {
@@ -85,13 +86,21 @@ const App: React.FC = () => {
     }
   }, [appState]);
 
-  // Scroll Listener for Parallax
+  // Scroll Listener for Parallax (Optimized)
   useEffect(() => {
+      let ticking = false;
       const handleScroll = () => {
-          if (appState === AppState.LANDING) {
-              setScrollY(window.scrollY);
+          if (!ticking) {
+              window.requestAnimationFrame(() => {
+                  if (appState === AppState.LANDING) {
+                      setScrollY(window.scrollY);
+                  }
+                  ticking = false;
+              });
+              ticking = true;
           }
       };
+      
       window.addEventListener('scroll', handleScroll, { passive: true });
       return () => window.removeEventListener('scroll', handleScroll);
   }, [appState]);
@@ -110,34 +119,44 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [appState, showDisconnectModal, showRulesModal, showSettingsModal]);
 
+  // Unified Event Handlers for Chat (Used by both P2P and AI)
+  const handleChatConnect = () => {
+      setAppState(AppState.CHAT);
+      playSound('match');
+  };
+  
+  const handleChatMessage = (text: string) => {
+      const event = new CustomEvent('peer-message', { detail: text });
+      window.dispatchEvent(event);
+  };
+  
+  const handleChatTyping = (isTyping: boolean) => {
+      const event = new CustomEvent('peer-typing', { detail: isTyping });
+      window.dispatchEvent(event);
+  };
+  
+  const handleChatDisconnect = () => {
+      const event = new Event('peer-disconnect');
+      window.dispatchEvent(event);
+  };
+
   const handleStartMatching = () => {
+    // CRITICAL: Initialize audio context on user gesture to ensure sounds play on iOS/Mobile
+    initAudio();
+
     setAppState(AppState.MATCHING);
     setErrorFeedback(null);
     
     // Initialize P2P connection
     initializePeerSession(
-        () => {
-            // On Connect
-            setAppState(AppState.CHAT);
-        },
-        (text) => {
-            // On Message
-            const event = new CustomEvent('peer-message', { detail: text });
-            window.dispatchEvent(event);
-        },
-        (isTyping) => {
-            // On Typing
-            const event = new CustomEvent('peer-typing', { detail: isTyping });
-            window.dispatchEvent(event);
-        },
-        () => {
-            // On Disconnect
-            const event = new Event('peer-disconnect');
-            window.dispatchEvent(event);
-        }
+        handleChatConnect,
+        handleChatMessage,
+        handleChatTyping,
+        handleChatDisconnect
     ).catch((err) => {
         console.error("Failed to start session:", err);
         setAppState(AppState.LANDING);
+        playSound('error');
         
         let msg = "We couldn't match you with anyone right now. Please try again.";
         const errStr = err.message || "";
@@ -165,6 +184,7 @@ const App: React.FC = () => {
 
   const confirmDisconnect = () => {
     terminateSession();
+    playSound('disconnect');
     setAppState(AppState.LANDING);
     setShowDisconnectModal(false);
   };
@@ -289,7 +309,10 @@ const App: React.FC = () => {
           )}
 
           {appState === AppState.MATCHING && (
-            <MatchingScreen onCancel={handleCancelMatching} />
+            <MatchingScreen 
+                onCancel={handleCancelMatching} 
+                onlineCount={onlineCount} 
+            />
           )}
 
           {appState === AppState.CHAT && (

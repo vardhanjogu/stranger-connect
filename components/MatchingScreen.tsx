@@ -1,11 +1,28 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AdUnit } from './AdUnit';
+import { Button } from './Button';
 
 interface MatchingScreenProps {
   onCancel: () => void;
+  onlineCount: number;
 }
 
-export const MatchingScreen: React.FC<MatchingScreenProps> = ({ onCancel }) => {
+export const MatchingScreen: React.FC<MatchingScreenProps> = ({ onCancel, onlineCount }) => {
+  const [showLowTrafficMessage, setShowLowTrafficMessage] = useState(false);
+
+  useEffect(() => {
+    // If user is still matching after 4 seconds and is likely the only one, show friendly message
+    const timer1 = setTimeout(() => {
+        if (onlineCount <= 1) {
+            setShowLowTrafficMessage(true);
+        }
+    }, 4000);
+
+    return () => {
+        clearTimeout(timer1);
+    };
+  }, [onlineCount]);
+
   return (
     <div className="flex flex-col items-center min-h-full pt-16 bg-darker text-center px-4 py-12">
       <div className="flex-1 flex flex-col items-center justify-center w-full my-auto">
@@ -35,12 +52,27 @@ export const MatchingScreen: React.FC<MatchingScreenProps> = ({ onCancel }) => {
           </div>
         </div>
         
-        <h2 className="text-2xl font-bold mb-2">Looking for a stranger...</h2>
-        <p className="text-slate-400 max-w-xs animate-pulse">
-          Connecting you with someone random. Be nice!
-        </p>
+        {showLowTrafficMessage ? (
+             <div className="max-w-md animate-in fade-in slide-in-from-bottom-4 duration-500 mb-6">
+                <h2 className="text-2xl font-bold mb-3 text-white">Waiting for a partner...</h2>
+                <div className="bg-surface/50 border border-white/10 p-4 rounded-xl text-sm text-slate-300 shadow-lg mb-4">
+                    <p className="mb-2 font-medium text-primary">👋 It looks like you're the first one here!</p>
+                    <p>
+                        Since the site is growing, traffic might be low at this exact moment. 
+                        Please keep this tab open. You will be automatically connected as soon as someone joins.
+                    </p>
+                </div>
+             </div>
+        ) : (
+            <div className="mb-6">
+                <h2 className="text-2xl font-bold mb-2">Looking for a stranger...</h2>
+                <p className="text-slate-400 max-w-xs animate-pulse">
+                Connecting you with someone random. Be nice!
+                </p>
+            </div>
+        )}
 
-        <div className="mt-12 flex gap-1 justify-center">
+        <div className="flex gap-1 justify-center">
           {[...Array(5)].map((_, i) => (
               <div 
                   key={i} 

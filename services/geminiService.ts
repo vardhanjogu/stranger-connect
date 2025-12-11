@@ -8,7 +8,7 @@ interface P2PEvent {
     payload: any;
 }
 
-// Global Peer instance
+// P2P State
 let peer: Peer | null = null;
 let connection: any = null;
 let heartbeatInterval: any = null;
@@ -18,6 +18,8 @@ let onMessageCallback: ((text: string) => void) | null = null;
 let onTypingCallback: ((isTyping: boolean) => void) | null = null;
 let onDisconnectCallback: (() => void) | null = null;
 let onConnectCallback: (() => void) | null = null;
+
+// --- P2P Logic ---
 
 export const initializePeerSession = async (
     onConnect: () => void,
@@ -143,7 +145,7 @@ const setupConnection = (conn: any) => {
     });
 
     connection.on('data', (data: P2PEvent) => {
-        console.log("Received event:", data);
+        // console.log("Received event:", data); // verbose
         
         if (data.type === 'chat' && onMessageCallback) {
             onMessageCallback(data.payload);
@@ -168,12 +170,14 @@ const setupConnection = (conn: any) => {
     });
 };
 
+// --- Unified Methods ---
+
 export const sendMessageToStranger = async (message: string): Promise<void> => {
     if (connection && connection.open) {
         const event: P2PEvent = { type: 'chat', payload: message };
         connection.send(event);
     } else {
-        console.warn("Cannot send message, connection not open");
+        console.warn("Cannot send message, P2P connection not open");
     }
 };
 
@@ -192,12 +196,13 @@ export const sendSignal = async (signal: string): Promise<void> => {
 };
 
 export const terminateSession = () => {
+    // P2P Cleanup
     if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
     }
     
-    // Clear callbacks to avoid side effects if events fire after termination
+    // Clear callbacks
     onMessageCallback = null;
     onTypingCallback = null;
     onDisconnectCallback = null;

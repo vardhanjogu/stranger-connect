@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
 import { sendMessageToStranger, sendTypingStatus, sendSignal, terminateSession } from '../services/geminiService';
+import { playSound } from '../services/soundService';
 import { Button } from './Button';
 import { AdUnit } from './AdUnit';
 import { Modal } from './Modal';
@@ -13,44 +14,6 @@ interface ChatInterfaceProps {
 
 // Local Storage Key
 const STORAGE_KEY = 'stranger_connect_history';
-
-// Reusable AudioContext to prevent running out of hardware contexts
-let audioCtx: AudioContext | null = null;
-
-const playMessageSound = () => {
-    try {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioContextClass) return;
-
-        if (!audioCtx) {
-            audioCtx = new AudioContextClass();
-        }
-        
-        // Resume if suspended (browser autoplay policy)
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume().catch(() => {});
-        }
-        
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(500, audioCtx.currentTime); 
-        oscillator.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.1);
-        
-        gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 0.1);
-    } catch (e) {
-        // Silently fail if audio not allowed or context error
-        console.warn("Audio playback failed", e);
-    }
-};
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStartNewChat }) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -151,6 +114,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
       }
 
       terminateSession();
+      playSound('disconnect');
       setIsChatActive(false);
       clearHistory();
       setDisconnectReason("Connection timed out due to inactivity.");
@@ -166,6 +130,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
             if (timeoutTriggeredRef.current) return;
             timeoutTriggeredRef.current = true;
             terminateSession();
+            playSound('disconnect');
             setIsChatActive(false);
             clearHistory();
             setDisconnectReason("Connection timed out due to inactivity.");
@@ -177,7 +142,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
         lastActivityRef.current = Date.now();
         setIsTyping(false); // Stop typing animation immediately when message arrives
 
-        playMessageSound();
+        playSound('incoming');
         setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: 'model', 
@@ -198,6 +163,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
     const handlePeerDisconnect = () => {
         if (timeoutTriggeredRef.current) return;
 
+        playSound('disconnect');
         setIsChatActive(false);
         clearHistory();
         setDisconnectReason("Stranger has disconnected.");
@@ -246,6 +212,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
 
     setMessages(prev => [...prev, userMsg]);
     setInputText('');
+    playSound('outgoing');
     
     // Clear typing status immediately
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -333,7 +300,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
         </div>
 
         {/* Input Area */}
-        <div className="p-4 bg-background/90 backdrop-blur border-t border-border pb-safe">
+        <div className="p-4 bg-background/90 backdrop-blur border-t border-border pb-[env(safe-area-inset-bottom,20px)]">
           {isChatActive ? (
               <div className="flex flex-col gap-2">
                 <form onSubmit={handleSendMessage} className="flex gap-2">
