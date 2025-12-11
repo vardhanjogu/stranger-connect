@@ -38,13 +38,12 @@ export const sendMessageToStranger = async (
 
   try {
     // 2. Send the Message + History to your Backend
-    // This hides your API Key and fixes Mobile Permission errors.
     const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             message, 
-            history: chatHistory 
+            history: chatHistory
         })
     });
 

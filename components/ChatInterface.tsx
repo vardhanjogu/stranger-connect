@@ -10,6 +10,33 @@ interface ChatInterfaceProps {
   onStartNewChat: () => void;
 }
 
+// Simple beep/pop sound generator using Web Audio API (No assets needed)
+const playMessageSound = () => {
+    try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContext) return;
+        
+        const ctx = new AudioContext();
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(500, ctx.currentTime); 
+        oscillator.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.1);
+        
+        gainNode.gain.setValueAtTime(0.05, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.1);
+    } catch (e) {
+        // Silently fail if audio not allowed
+    }
+};
+
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStartNewChat }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -84,6 +111,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
       const totalDelay = baseDelay + typingTime;
 
       setTimeout(() => {
+        // Play sound if tab is active (and user interacted)
+        playMessageSound();
+
         // Show the message (even if it's the last one)
         setMessages(prev => [...prev, {
           id: Date.now().toString(),

@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const SYSTEM_INSTRUCTION = `
+const BASE_SYSTEM_INSTRUCTION = `
 You are a random user on a chat website called 'StrangerConnect' (similar to Omegle/Chatroulette). 
 You are simulating a real human interaction. You are NOT an AI assistant.
 
@@ -38,9 +38,9 @@ GOAL: Be a realistic, unpredictable stranger. Don't be overly polite. If you are
 `;
 
 export default async function handler(req: any, res: any) {
-  // 1. CORS Headers (Allows mobile access)
+  // 1. CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*'); // In production, replace '*' with your domain
+  res.setHeader('Access-Control-Allow-Origin', '*'); 
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
@@ -59,7 +59,6 @@ export default async function handler(req: any, res: any) {
   try {
     const { message, history } = req.body;
     
-    // Use server-side environment variable
     const apiKey = process.env.API_KEY;
     
     if (!apiKey) {
@@ -69,19 +68,19 @@ export default async function handler(req: any, res: any) {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    // Reconstruct the chat with the history passed from the client
-    const chat = ai.chats.create({
+    // Use generateContent for stateless interactions.
+    // 'history' from the client already includes the latest user message.
+    const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      history: history || [], // Inject previous context
+      contents: history || [], 
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction: BASE_SYSTEM_INSTRUCTION,
         temperature: 1.3,
         topK: 50,
       },
     });
 
-    const result = await chat.sendMessage({ message });
-    return res.status(200).json({ text: result.text || "" });
+    return res.status(200).json({ text: response.text || "" });
 
   } catch (error: any) {
     console.error("Backend Proxy Error:", error);

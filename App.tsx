@@ -9,6 +9,13 @@ import { AdUnit } from './components/AdUnit';
 import { AppState } from './types';
 import { startNewChatSession, terminateSession } from './services/geminiService';
 
+// Analytics global declaration
+declare global {
+  interface Window {
+    gtag: (...args: any[]) => void;
+  }
+}
+
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.LANDING);
   // Initialize with a random number between 1200 and 1800 to ensure it looks dynamic on refresh
@@ -26,6 +33,15 @@ const App: React.FC = () => {
     }, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Track Page Views/State Changes for Analytics
+  useEffect(() => {
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'screen_view', {
+        screen_name: appState
+      });
+    }
+  }, [appState]);
 
   // Handle ESC key to leave chat or close modal
   useEffect(() => {
@@ -65,8 +81,6 @@ const App: React.FC = () => {
     } catch (e) {
         console.error("Initialization error:", e);
         setAppState(AppState.LANDING);
-        // We suppress the alert here because the service handles fallbacks.
-        // If it critically fails, we just return to landing.
     }
   };
 
@@ -135,16 +149,17 @@ const App: React.FC = () => {
                     Talk to <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">Someone</span>
                   </h1>
                   
-                  <p className="text-slate-400 text-lg mb-8 max-w-md mx-auto leading-relaxed">
+                  {/* Updated Text with wider container to prevent cutting off */}
+                  <p className="text-slate-400 text-lg mb-8 max-w-xl mx-auto leading-relaxed px-4">
                     Connect anonymously with random strangers instantly. No login required. Just meaningful (or weird) conversations.
                   </p>
 
                   {/* Mobile & Tablet Ad Unit - High Visibility (Above Buttons) */}
-                  <div className="w-full max-w-xs mb-8 block lg:hidden z-10">
+                  <div className="w-full max-w-xs mb-6 block lg:hidden z-10">
                      <AdUnit label="Mobile/Tablet Partner Ad" />
                   </div>
                   
-                  <div className="flex flex-col gap-2 w-full max-w-xs z-10">
+                  <div className="flex flex-col gap-4 w-full max-w-sm z-10">
                     <Button onClick={handleStartMatching} className="w-full text-lg py-4">
                       Start Chatting
                     </Button>
