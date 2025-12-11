@@ -1,44 +1,14 @@
-import { GoogleGenAI } from "@google/genai";
+// MATCHMAKING SERVER
+// This replaces the AI logic. It pairs two real users together.
+// NOTE: In a serverless production environment (like Vercel), this in-memory variable
+// will reset. For local testing, it works. For production, use Redis/Database.
 
-const BASE_SYSTEM_INSTRUCTION = `
-You are a random user on a chat website called 'StrangerConnect' (similar to Omegle/Chatroulette). 
-You are simulating a real human interaction. You are NOT an AI assistant.
-
-YOUR PERSONA (Generate this internally at the start):
--   Name, Age (18-35), Gender, Location.
--   Current Context: (e.g., bored in class, high, drinking alone, looking for a date, just trolling).
-
-SPECIAL SYSTEM TRIGGERS (HIDDEN):
-1.  If you receive "[SYSTEM_INITIATE]", it means YOU (the stranger) must start the conversation. Send a short, casual opener. (e.g., "hi", "m", "hey from uk", "asl").
-2.  If you receive "[SYSTEM_INACTIVITY]", it means the user hasn't replied in a while. You should either:
-    -   Ask if they are there ("u there?", "hello??").
-    -   OR, get bored and disconnect ("__DISCONNECT__::boring", "__DISCONNECT__::afk bye").
-
-THE "SKIPPING" BEHAVIOR (CRITICAL):
-On these sites, people disconnect ("skip") constantly. You should do the same to be realistic.
-1.  **Gender Filtering:** If the user opens with "m" (male) and your persona is a straight male, you might disconnect immediately (say "skip" or just leave). If you are female, you might stay.
-2.  **Boredom:** If the user sends one-word answers ("hi", "ok", "cool"), get bored and leave.
-3.  **Randomness:** Sometimes just disconnect for no reason (e.g., "gtg dinner", "boring", or nothing).
-4.  **Trolling:** You can be slightly rude or dismissive if it fits your persona.
-
-HOW TO DISCONNECT:
-If you decide to leave the chat, your response MUST start with "__DISCONNECT__::" followed by your last message.
-Examples:
--   User: "m" -> You: "__DISCONNECT__::skip"
--   User: "how are you" -> You: "__DISCONNECT__::boring bye"
--   User: (says something weird) -> You: "__DISCONNECT__::eww wtf bye"
--   User: (normal chat) -> You: (Respond normally)
-
-WRITING STYLE:
--   All lowercase, lazy typing, typos are good.
--   Abbreviations: u, r, lol, asl, m or f, wyd.
--   Short messages.
-
-GOAL: Be a realistic, unpredictable stranger. Don't be overly polite. If you aren't feeling the chat, SKIP.
-`;
+let waitingUser: string | null = null;
+let waitingUserTimestamp: number = 0;
+const activeUsers = new Map<string, number>();
 
 export default async function handler(req: any, res: any) {
-  // 1. CORS Headers
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*'); 
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -56,34 +26,76 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  const cleanActiveUsers = () => {
+    const now = Date.now();
+    for (const [id, lastSeen] of activeUsers.entries()) {
+        if (now - lastSeen > 15000) { // 15s timeout
+            activeUsers.delete(id);
+        }
+    }
+  };
+
   try {
-    const { message, history } = req.body;
+    const { peerId, action } = req.body;
     
-    const apiKey = process.env.API_KEY;
-    
-    if (!apiKey) {
-      console.error("API Key missing on server");
-      return res.status(500).json({ error: 'Server Configuration Error' });
+    // Maintenance
+    cleanActiveUsers();
+
+    if (action === 'stats') {
+        return res.status(200).json({ onlineCount: Math.max(1, activeUsers.size) });
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    if (action === 'heartbeat' && peerId) {
+        activeUsers.set(peerId, Date.now());
+        return res.status(200).json({ onlineCount: activeUsers.size });
+    }
 
-    // Use generateContent for stateless interactions.
-    // 'history' from the client already includes the latest user message.
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: history || [], 
-      config: {
-        systemInstruction: BASE_SYSTEM_INSTRUCTION,
-        temperature: 1.3,
-        topK: 50,
-      },
-    });
+    if (action === 'join') {
+        if (peerId) activeUsers.set(peerId, Date.now());
 
-    return res.status(200).json({ text: response.text || "" });
+        // Clean up stale waiting user (older than 10 seconds)
+        if (waitingUser && (Date.now() - waitingUserTimestamp > 10000)) {
+            waitingUser = null;
+        }
+
+        if (waitingUser && waitingUser !== peerId) {
+            // MATCH FOUND!
+            const matchId = waitingUser;
+            
+            // Clear the waiting room
+            waitingUser = null; 
+            waitingUserTimestamp = 0;
+
+            return res.status(200).json({ 
+                status: 'matched', 
+                matchPeerId: matchId,
+                role: 'initiator' // This user will call .connect()
+            });
+        } else {
+            // NO MATCH, ADD TO WAITING ROOM
+            waitingUser = peerId;
+            waitingUserTimestamp = Date.now();
+            
+            return res.status(200).json({ 
+                status: 'waiting',
+                role: 'receiver' // This user will wait for connection
+            });
+        }
+    }
+    
+    // Explicit leave
+    if (action === 'leave') {
+        if (peerId) activeUsers.delete(peerId);
+        if (waitingUser === peerId) {
+            waitingUser = null;
+        }
+        return res.status(200).json({ status: 'ok' });
+    }
+
+    return res.status(400).json({ error: 'Invalid action' });
 
   } catch (error: any) {
-    console.error("Backend Proxy Error:", error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    console.error("Matchmaking Error:", error);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 }

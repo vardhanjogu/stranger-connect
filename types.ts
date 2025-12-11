@@ -12,6 +12,14 @@ export enum AppState {
   CHAT = 'CHAT',
 }
 
+export type Theme = 'dark' | 'light' | 'midnight' | 'forest';
+
+export interface UserSettings {
+  theme: Theme;
+  notifications: boolean;
+  topic?: string;
+}
+
 export interface ChatSessionConfig {
   topic?: string;
 }

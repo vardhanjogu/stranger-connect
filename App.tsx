@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { ChatInterface } from './components/ChatInterface';
 import { MatchingScreen } from './components/MatchingScreen';
 import { Button } from './components/Button';
 import { Modal } from './components/Modal';
 import { RulesModal } from './components/RulesModal';
+import { SettingsModal } from './components/SettingsModal';
 import { AdUnit } from './components/AdUnit';
-import { AppState } from './types';
-import { startNewChatSession, terminateSession } from './services/geminiService';
+import { AppState, UserSettings } from './types';
+import { initializePeerSession, terminateSession } from './services/geminiService';
 
 // Analytics global declaration
 declare global {
@@ -18,23 +19,64 @@ declare global {
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.LANDING);
-  // Initialize with a random number between 1200 and 1800 to ensure it looks dynamic on refresh
-  const [onlineCount, setOnlineCount] = useState(() => Math.floor(Math.random() * 600) + 1200);
+  const [onlineCount, setOnlineCount] = useState(1);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const [showRulesModal, setShowRulesModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   
-  // Use a ref to track the timeout so we can cancel it
-  const matchingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // User Preferences / Settings
+  const [userSettings, setUserSettings] = useState<UserSettings>(() => {
+    // Try to load from localStorage
+    const saved = localStorage.getItem('stranger_settings');
+    return saved ? JSON.parse(saved) : { theme: 'dark', notifications: true };
+  });
 
-  // Fake online count fluctuation
+  // Error Feedback
+  const [errorFeedback, setErrorFeedback] = useState<string | null>(null);
+  
+  // Parallax State
+  const [scrollY, setScrollY] = useState(0);
+
+  // Apply Theme Effect
   useEffect(() => {
-    const interval = setInterval(() => {
-      setOnlineCount(prev => prev + Math.floor(Math.random() * 10) - 5);
-    }, 5000);
+    // Remove all known theme classes
+    document.body.classList.remove('theme-light', 'theme-midnight', 'theme-forest');
+    
+    // Apply selected theme (if not dark, which is default)
+    if (userSettings.theme !== 'dark') {
+      document.body.classList.add(`theme-${userSettings.theme}`);
+    }
+    
+    // Save settings
+    localStorage.setItem('stranger_settings', JSON.stringify(userSettings));
+  }, [userSettings]);
+
+  // Fetch Real Online Count
+  useEffect(() => {
+    const fetchCount = async () => {
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: 'stats' })
+            });
+            const data = await res.json();
+            if (typeof data.onlineCount === 'number') {
+                setOnlineCount(data.onlineCount);
+            }
+        } catch (e) {
+            // Silently fail
+        }
+    };
+    
+    // Initial fetch
+    fetchCount();
+
+    const interval = setInterval(fetchCount, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  // Track Page Views/State Changes for Analytics
+  // Track Page Views
   useEffect(() => {
     if (typeof window.gtag === 'function') {
       window.gtag('event', 'screen_view', {
@@ -43,58 +85,81 @@ const App: React.FC = () => {
     }
   }, [appState]);
 
-  // Handle ESC key to leave chat or close modal
+  // Scroll Listener for Parallax
+  useEffect(() => {
+      const handleScroll = () => {
+          if (appState === AppState.LANDING) {
+              setScrollY(window.scrollY);
+          }
+      };
+      window.addEventListener('scroll', handleScroll, { passive: true });
+      return () => window.removeEventListener('scroll', handleScroll);
+  }, [appState]);
+
+  // Handle ESC key
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (showRulesModal) {
-            setShowRulesModal(false);
-        } else if (showDisconnectModal) {
-            setShowDisconnectModal(false);
-        } else if (appState === AppState.CHAT) {
-            setShowDisconnectModal(true);
-        }
+        if (showRulesModal) setShowRulesModal(false);
+        else if (showSettingsModal) setShowSettingsModal(false);
+        else if (showDisconnectModal) setShowDisconnectModal(false);
+        else if (appState === AppState.CHAT) setShowDisconnectModal(true);
       }
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [appState, showDisconnectModal, showRulesModal]);
+  }, [appState, showDisconnectModal, showRulesModal, showSettingsModal]);
 
-  const handleStartMatching = async () => {
+  const handleStartMatching = () => {
     setAppState(AppState.MATCHING);
+    setErrorFeedback(null);
     
-    // Simulate finding a partner delay
-    const delay = Math.floor(Math.random() * 2000) + 1500; // 1.5s - 3.5s
-    
-    try {
-        startNewChatSession();
-        
-        // Clear any existing timeout
-        if (matchingTimeoutRef.current) {
-            clearTimeout(matchingTimeoutRef.current);
-        }
-
-        matchingTimeoutRef.current = setTimeout(() => {
+    // Initialize P2P connection
+    initializePeerSession(
+        () => {
+            // On Connect
             setAppState(AppState.CHAT);
-        }, delay);
-
-    } catch (e) {
-        console.error("Initialization error:", e);
+        },
+        (text) => {
+            // On Message
+            const event = new CustomEvent('peer-message', { detail: text });
+            window.dispatchEvent(event);
+        },
+        (isTyping) => {
+            // On Typing
+            const event = new CustomEvent('peer-typing', { detail: isTyping });
+            window.dispatchEvent(event);
+        },
+        () => {
+            // On Disconnect
+            const event = new Event('peer-disconnect');
+            window.dispatchEvent(event);
+        }
+    ).catch((err) => {
+        console.error("Failed to start session:", err);
         setAppState(AppState.LANDING);
-    }
+        
+        let msg = "We couldn't match you with anyone right now. Please try again.";
+        const errStr = err.message || "";
+        
+        if (errStr.includes("timed out")) {
+          msg = "Connection timed out. This is often due to a firewall or unstable internet. Please check your network and try again.";
+        } else if (errStr.includes("unavailable") || errStr.includes("500") || errStr.includes("502")) {
+          msg = "Our matchmaking server is currently experiencing high traffic or maintenance. Please wait a moment and try again.";
+        } else if (errStr.includes("browser")) {
+          msg = "Your browser does not support the required WebRTC features. Please try Chrome, Firefox, or Safari.";
+        }
+        
+        setErrorFeedback(msg);
+    });
   };
 
   const handleCancelMatching = () => {
-    if (matchingTimeoutRef.current) {
-        clearTimeout(matchingTimeoutRef.current);
-        matchingTimeoutRef.current = null;
-    }
     terminateSession();
     setAppState(AppState.LANDING);
   };
 
   const handleLeaveChat = () => {
-    // Instead of window.confirm, show the custom modal
     setShowDisconnectModal(true);
   };
 
@@ -113,18 +178,19 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col bg-darker text-white overflow-hidden">
+    <div className="h-[100dvh] w-full flex flex-col bg-background text-foreground overflow-hidden transition-colors duration-500">
       <Header 
         appState={appState} 
         onLeaveChat={handleLeaveChat} 
         onLogoClick={handleLogoClick}
         onlineCount={onlineCount}
+        onOpenSettings={() => setShowSettingsModal(true)}
       />
 
       <Modal 
         isOpen={showDisconnectModal}
         title="Disconnect?"
-        message="Are you sure you want to end this conversation? You will lose this chat history."
+        message="Are you sure you want to end this conversation?"
         onConfirm={confirmDisconnect}
         onCancel={() => setShowDisconnectModal(false)}
       />
@@ -134,69 +200,86 @@ const App: React.FC = () => {
         onClose={() => setShowRulesModal(false)}
       />
 
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        settings={userSettings}
+        onSave={setUserSettings}
+      />
+
       {/* Main Layout Container */}
       <div className="flex-1 flex overflow-hidden">
         
         {/* Center Content */}
         <main className={`flex-1 relative flex flex-col w-full ${appState === AppState.CHAT ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {appState === AppState.LANDING && (
-            <div className="min-h-full flex flex-col items-center p-6 text-center animate-in fade-in zoom-in duration-300 pt-24 pb-6 relative">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[100px] pointer-events-none"></div>
+            <div className="min-h-full flex flex-col items-center p-6 text-center animate-in fade-in zoom-in duration-300 pt-24 pb-6 relative overflow-hidden">
               
-              {/* Content Wrapper with safe centering (my-auto) */}
+              {/* Parallax Background Blob */}
+              <div 
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-primary/20 via-purple-500/10 to-secondary/20 rounded-full blur-[120px] pointer-events-none transition-transform duration-100 ease-out will-change-transform"
+                style={{ 
+                    transform: `translate(-50%, calc(-50% + ${scrollY * 0.4}px))` 
+                }}
+              ></div>
+              
               <div className="flex flex-col items-center w-full max-w-3xl my-auto z-10">
-                  <h1 className="text-4xl md:text-6xl font-black mb-6 tracking-tighter">
+                  <h1 className="text-4xl md:text-6xl font-black mb-6 tracking-tighter drop-shadow-lg text-foreground">
                     Talk to <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">Someone</span>
                   </h1>
                   
-                  {/* Updated Text with wider container to prevent cutting off */}
-                  <p className="text-slate-400 text-lg mb-8 max-w-xl mx-auto leading-relaxed px-4">
-                    Connect anonymously with random strangers instantly. No login required. Just meaningful (or weird) conversations.
+                  <p className="text-slate-400 text-lg mb-8 max-w-2xl mx-auto leading-relaxed px-4 shadow-black drop-shadow-md">
+                    Connect with REAL strangers instantly. No login required.
                   </p>
 
-                  {/* Mobile & Tablet Ad Unit - High Visibility (Above Buttons) */}
+                  {/* Error Feedback Banner */}
+                  {errorFeedback && (
+                      <div className="w-full max-w-md bg-red-500/10 border border-red-500/30 text-red-500 px-4 py-3 rounded-lg mb-6 text-sm font-medium animate-bounce-slow flex flex-col gap-1">
+                          <span className="flex items-center justify-center gap-2 font-bold">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                            Connection Failed
+                          </span>
+                          <span className="opacity-90">{errorFeedback}</span>
+                      </div>
+                  )}
+
                   <div className="w-full max-w-xs mb-6 block lg:hidden z-10">
                      <AdUnit label="Mobile/Tablet Partner Ad" />
                   </div>
                   
                   <div className="flex flex-col gap-4 w-full max-w-sm z-10">
-                    <Button onClick={handleStartMatching} className="w-full text-lg py-4">
+                    <Button onClick={handleStartMatching} className="w-full text-lg py-4 shadow-xl shadow-primary/20">
                       Start Chatting
                     </Button>
                     <p className="text-xs text-slate-500 text-center">
-                        By clicking "Start Chatting", you agree to our <button onClick={() => setShowRulesModal(true)} className="underline hover:text-slate-300 transition-colors">Terms & Guidelines</button>.
+                        By clicking "Start Chatting", you agree to our <button onClick={() => setShowRulesModal(true)} className="underline hover:text-foreground transition-colors">Terms & Guidelines</button>.
                     </p>
                   </div>
 
-                  {/* Feature Pills */}
                   <div className="mt-16 flex flex-wrap justify-center gap-4 text-sm font-medium text-slate-500">
-                    <span className="bg-slate-900/50 border border-slate-800 px-4 py-2 rounded-full">
+                    <span className="bg-surface/50 border border-border px-4 py-2 rounded-full backdrop-blur-sm">
                       🔒 Anonymous
                     </span>
-                    <span className="bg-slate-900/50 border border-slate-800 px-4 py-2 rounded-full">
-                      ⚡ Instant Match
+                    <span className="bg-surface/50 border border-border px-4 py-2 rounded-full backdrop-blur-sm">
+                      ⚡ P2P Connection
                     </span>
-                    <span className="bg-slate-900/50 border border-slate-800 px-4 py-2 rounded-full">
-                      🌍 Global
+                    <span className="bg-surface/50 border border-border px-4 py-2 rounded-full backdrop-blur-sm">
+                      🌍 Real Users
                     </span>
                   </div>
 
-                  {/* Landing Page Ad (Bottom) */}
                   <div className="mt-12 w-full max-w-lg z-10">
                     <AdUnit label="Sponsored Partner" />
                   </div>
               </div>
 
-              {/* Compliance Footer Links - Absolute Bottom */}
               <div className="mt-auto pt-8 z-10 w-full flex flex-col items-center">
                  <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-slate-500 font-medium">
-                      <button onClick={() => setShowRulesModal(true)} className="hover:text-white transition-colors">About Us</button>
+                      <button onClick={() => setShowRulesModal(true)} className="hover:text-foreground transition-colors">About Us</button>
                       <span className="opacity-30">•</span>
-                      <button onClick={() => setShowRulesModal(true)} className="hover:text-white transition-colors">Safety</button>
+                      <button onClick={() => setShowRulesModal(true)} className="hover:text-foreground transition-colors">Safety</button>
                       <span className="opacity-30">•</span>
-                      <button onClick={() => setShowRulesModal(true)} className="hover:text-white transition-colors">Privacy</button>
-                      <span className="opacity-30">•</span>
-                      <button onClick={() => setShowRulesModal(true)} className="hover:text-white transition-colors">Contact</button>
+                      <button onClick={() => setShowRulesModal(true)} className="hover:text-foreground transition-colors">Privacy</button>
                  </div>
                  <div className="text-xs text-slate-500 font-medium mt-2">
                     © 2025 StrangerConnect. All Rights Reserved.
