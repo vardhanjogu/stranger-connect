@@ -12,6 +12,7 @@ interface P2PEvent {
 let peer: Peer | null = null;
 let connection: any = null;
 let heartbeatInterval: any = null;
+let isSessionActive = false; // Flag to control polling loops
 
 // Callbacks
 let onMessageCallback: ((text: string) => void) | null = null;
@@ -30,6 +31,7 @@ export const initializePeerSession = async (
     
     // Cleanup previous session
     terminateSession();
+    isSessionActive = true;
 
     onConnectCallback = onConnect;
     onMessageCallback = onMessage;
@@ -60,14 +62,11 @@ export const initializePeerSession = async (
             // Start Heartbeat
             startHeartbeat(id);
 
-            try {
-                // Call our local Matchmaking API to find a partner
-                await findMatch(id);
-                resolve();
-            } catch (e) {
-                console.error("Matchmaking failed", e);
-                reject(e);
-            }
+            // Start Polling for Match
+            // We resolve immediately so the UI shows "Searching...", 
+            // but the search happens in background loop.
+            pollForMatch(id).catch(console.error);
+            resolve();
         });
 
         peer.on('error', (err) => {
@@ -81,6 +80,12 @@ export const initializePeerSession = async (
 
         // Handle Incoming Connection (We are the 'receiver')
         peer.on('connection', (conn) => {
+            // If we are already connected, close this new one (1-on-1 only)
+            if (connection && connection.open) {
+                conn.close();
+                return;
+            }
+            console.log("Incoming connection received!");
             setupConnection(conn);
         });
     });
@@ -88,55 +93,80 @@ export const initializePeerSession = async (
 
 const startHeartbeat = (peerId: string) => {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    // Send heartbeat immediately
-    fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ peerId, action: 'heartbeat' })
-    }).catch(() => {});
+    
+    const sendPulse = () => {
+        if (!isSessionActive) return;
+        fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ peerId, action: 'heartbeat' })
+        }).catch(() => {});
+    };
 
-    // Then every 10 seconds
-    heartbeatInterval = setInterval(() => {
-        if (peer && !peer.destroyed) {
-            fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ peerId, action: 'heartbeat' })
-            }).catch(() => {});
-        }
-    }, 10000);
+    // Send immediately
+    sendPulse();
+
+    // Then every 5 seconds (more frequent for mobile reliability)
+    heartbeatInterval = setInterval(sendPulse, 5000);
 };
 
-const findMatch = async (myPeerId: string) => {
-    // Poll the matchmaking endpoint
-    const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ peerId: myPeerId, action: 'join' })
-    });
-
-    if (!response.ok) {
-        throw new Error("Matchmaking server unavailable");
-    }
-
-    const data = await response.json();
-
-    if (data.status === 'matched') {
-        console.log("Match found! Connecting to:", data.matchPeerId);
-        // We are the initiator, so WE connect to THEM
-        if (peer) {
-            const conn = peer.connect(data.matchPeerId, {
-                reliable: true
-            });
-            setupConnection(conn);
+// Robust Polling Mechanism
+const pollForMatch = async (myPeerId: string) => {
+    let attempts = 0;
+    
+    while (isSessionActive) {
+        // If we are already connected or connecting, stop looking
+        if (connection || (peer && peer.disconnected)) {
+            break;
         }
-    } else {
-        console.log("Waiting for someone to connect to me...");
-        // We do nothing, just wait for peer.on('connection')
+
+        try {
+            // Poll the matchmaking endpoint
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ peerId: myPeerId, action: 'join' })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+
+                if (data.status === 'matched' && data.matchPeerId) {
+                    console.log("Match found via polling! Connecting to:", data.matchPeerId);
+                    
+                    if (peer) {
+                        const conn = peer.connect(data.matchPeerId, {
+                            reliable: true
+                        });
+                        setupConnection(conn);
+                        return; // Stop polling
+                    }
+                } else {
+                    console.log("Still waiting for partner...");
+                }
+            }
+        } catch (e) {
+            console.warn("Matchmaking poll failed, retrying...", e);
+        }
+
+        attempts++;
+        // Wait 2 seconds before next poll to avoid spamming but keep it snappy
+        await new Promise(resolve => setTimeout(resolve, 2000));
     }
 };
 
 const setupConnection = (conn: any) => {
+    if (connection) {
+        // Already have a connection?
+        // If the new one is open and old one is not, switch.
+        if (!connection.open && conn.open) {
+            connection = conn;
+        } else if (connection.open) {
+            // We are already chatting. Ignore.
+            return;
+        }
+    }
+    
     connection = conn;
 
     connection.on('open', () => {
@@ -145,14 +175,11 @@ const setupConnection = (conn: any) => {
     });
 
     connection.on('data', (data: P2PEvent) => {
-        // console.log("Received event:", data); // verbose
-        
         if (data.type === 'chat' && onMessageCallback) {
             onMessageCallback(data.payload);
         } else if (data.type === 'typing' && onTypingCallback) {
             onTypingCallback(data.payload);
         } else if (data.type === 'signal') {
-            // Handle internal signals (like timeout)
             if (data.payload === 'TIMEOUT' && onMessageCallback) {
                 onMessageCallback("__TIMEOUT_SIGNAL__");
             }
@@ -196,6 +223,8 @@ export const sendSignal = async (signal: string): Promise<void> => {
 };
 
 export const terminateSession = () => {
+    isSessionActive = false; // Stop loops
+
     // P2P Cleanup
     if (heartbeatInterval) {
         clearInterval(heartbeatInterval);

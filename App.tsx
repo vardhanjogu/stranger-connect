@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { ChatInterface } from './components/ChatInterface';
 import { MatchingScreen } from './components/MatchingScreen';
+import { Footer } from './components/Footer';
 import { Button } from './components/Button';
 import { Modal } from './components/Modal';
 import { RulesModal } from './components/RulesModal';
@@ -25,6 +26,9 @@ const App: React.FC = () => {
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   
+  // Ref for the main scrollable container
+  const mainRef = useRef<HTMLElement>(null);
+
   // User Preferences / Settings
   const [userSettings, setUserSettings] = useState<UserSettings>(() => {
     // Try to load from localStorage
@@ -86,14 +90,17 @@ const App: React.FC = () => {
     }
   }, [appState]);
 
-  // Scroll Listener for Parallax (Optimized)
+  // Scroll Listener for Parallax (Optimized & Fixed for Scroll Container)
   useEffect(() => {
+      const el = mainRef.current;
+      if (!el || appState !== AppState.LANDING) return;
+
       let ticking = false;
       const handleScroll = () => {
           if (!ticking) {
               window.requestAnimationFrame(() => {
-                  if (appState === AppState.LANDING) {
-                      setScrollY(window.scrollY);
+                  if (el) {
+                      setScrollY(el.scrollTop);
                   }
                   ticking = false;
               });
@@ -101,8 +108,8 @@ const App: React.FC = () => {
           }
       };
       
-      window.addEventListener('scroll', handleScroll, { passive: true });
-      return () => window.removeEventListener('scroll', handleScroll);
+      el.addEventListener('scroll', handleScroll, { passive: true });
+      return () => el.removeEventListener('scroll', handleScroll);
   }, [appState]);
 
   // Handle ESC key
@@ -198,7 +205,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col bg-background text-foreground overflow-hidden transition-colors duration-500">
+    <div className="h-screen h-[100dvh] w-full flex flex-col bg-background text-foreground overflow-hidden transition-colors duration-500">
       <Header 
         appState={appState} 
         onLeaveChat={handleLeaveChat} 
@@ -228,12 +235,15 @@ const App: React.FC = () => {
       />
 
       {/* Main Layout Container */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden flex-col">
         
         {/* Center Content */}
-        <main className={`flex-1 relative flex flex-col w-full ${appState === AppState.CHAT ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <main 
+            ref={mainRef}
+            className={`flex-1 relative flex flex-col w-full overflow-x-hidden ${appState === AppState.CHAT ? 'overflow-hidden' : 'overflow-y-auto'}`}
+        >
           {appState === AppState.LANDING && (
-            <div className="min-h-full flex flex-col items-center p-6 text-center animate-in fade-in zoom-in duration-300 pt-24 pb-6 relative overflow-hidden">
+            <div className="flex-1 flex flex-col items-center p-6 text-center animate-in fade-in zoom-in duration-300 pt-24 relative">
               
               {/* Parallax Background Blob */}
               <div 
@@ -292,19 +302,6 @@ const App: React.FC = () => {
                     <AdUnit label="Sponsored Partner" />
                   </div>
               </div>
-
-              <div className="mt-auto pt-8 z-10 w-full flex flex-col items-center">
-                 <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-slate-500 font-medium">
-                      <button onClick={() => setShowRulesModal(true)} className="hover:text-foreground transition-colors">About Us</button>
-                      <span className="opacity-30">•</span>
-                      <button onClick={() => setShowRulesModal(true)} className="hover:text-foreground transition-colors">Safety</button>
-                      <span className="opacity-30">•</span>
-                      <button onClick={() => setShowRulesModal(true)} className="hover:text-foreground transition-colors">Privacy</button>
-                 </div>
-                 <div className="text-xs text-slate-500 font-medium mt-2">
-                    © 2025 StrangerConnect. All Rights Reserved.
-                 </div>
-              </div>
             </div>
           )}
 
@@ -318,8 +315,11 @@ const App: React.FC = () => {
           {appState === AppState.CHAT && (
             <ChatInterface onEndChat={handleLeaveChat} onStartNewChat={handleStartMatching} />
           )}
-        </main>
 
+          {/* Footer for all pages */}
+          <Footer onOpenRules={() => setShowRulesModal(true)} />
+
+        </main>
       </div>
     </div>
   );

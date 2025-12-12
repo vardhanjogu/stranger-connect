@@ -48,14 +48,21 @@ export default async function handler(req: any, res: any) {
 
     if (action === 'heartbeat' && peerId) {
         activeUsers.set(peerId, Date.now());
+        
+        // CRITICAL FIX: If the user sending the heartbeat is the one currently waiting,
+        // refresh the waiting timestamp so they don't get timed out from the queue.
+        if (waitingUser === peerId) {
+            waitingUserTimestamp = Date.now();
+        }
+
         return res.status(200).json({ onlineCount: activeUsers.size });
     }
 
     if (action === 'join') {
         if (peerId) activeUsers.set(peerId, Date.now());
 
-        // Clean up stale waiting user (older than 10 seconds)
-        if (waitingUser && (Date.now() - waitingUserTimestamp > 10000)) {
+        // Clean up stale waiting user (older than 30 seconds - matching the heartbeat/active timeout)
+        if (waitingUser && (Date.now() - waitingUserTimestamp > 30000)) {
             waitingUser = null;
         }
 

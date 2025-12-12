@@ -24,7 +24,7 @@ export const MatchingScreen: React.FC<MatchingScreenProps> = ({ onCancel, online
   }, [onlineCount]);
 
   return (
-    <div className="flex flex-col items-center min-h-full pt-16 bg-darker text-center px-4 py-12">
+    <div className="flex flex-col items-center flex-1 w-full pt-16 bg-darker text-center px-4 py-12">
       <div className="flex-1 flex flex-col items-center justify-center w-full my-auto">
         
         {/* Mobile & Tablet Top Ad (Hidden on Desktop) */}

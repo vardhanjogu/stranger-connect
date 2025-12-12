@@ -59,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {appState === AppState.LANDING && (
-           <div className="flex items-center gap-2 text-sm text-slate-400 hidden sm:flex">
+           <div className="flex items-center gap-2 text-sm text-slate-400">
              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
              {onlineCount.toLocaleString()} online
            </div>

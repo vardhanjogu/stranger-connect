@@ -252,7 +252,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
         onCancel={() => setShowReportModal(false)}
       />
 
-      <div className="flex flex-col h-full max-w-3xl mx-auto pt-16">
+      <div className="flex flex-col flex-1 min-h-0 w-full max-w-3xl mx-auto pt-16">
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
           
