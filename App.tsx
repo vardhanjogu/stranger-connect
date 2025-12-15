@@ -7,6 +7,7 @@ import { Button } from './components/Button';
 import { Modal } from './components/Modal';
 import { RulesModal } from './components/RulesModal';
 import { SettingsModal } from './components/SettingsModal';
+import { AgeGateModal } from './components/AgeGateModal'; // Import Age Gate
 import { AdUnit } from './components/AdUnit';
 import { AppState, UserSettings } from './types';
 import { initializePeerSession, terminateSession } from './services/geminiService';
@@ -26,6 +27,10 @@ const App: React.FC = () => {
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   
+  // Age Verification State
+  const [isAgeVerified, setIsAgeVerified] = useState<boolean>(false);
+  const [showAgeGate, setShowAgeGate] = useState<boolean>(false);
+  
   // Ref for the main scrollable container
   const mainRef = useRef<HTMLElement>(null);
 
@@ -38,6 +43,14 @@ const App: React.FC = () => {
 
   // Error Feedback
   const [errorFeedback, setErrorFeedback] = useState<string | null>(null);
+
+  // Check Age Verification on Mount
+  useEffect(() => {
+      const verified = localStorage.getItem('stranger_age_verified');
+      if (verified === 'true') {
+          setIsAgeVerified(true);
+      }
+  }, []);
 
   // Apply Theme Effect
   useEffect(() => {
@@ -95,11 +108,12 @@ const App: React.FC = () => {
         else if (showSettingsModal) setShowSettingsModal(false);
         else if (showDisconnectModal) setShowDisconnectModal(false);
         else if (appState === AppState.CHAT) setShowDisconnectModal(true);
+        else if (showAgeGate) setShowAgeGate(false);
       }
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [appState, showDisconnectModal, showRulesModal, showSettingsModal]);
+  }, [appState, showDisconnectModal, showRulesModal, showSettingsModal, showAgeGate]);
 
   // Unified Event Handlers for Chat (Used by both P2P and AI)
   const handleChatConnect = () => {
@@ -122,7 +136,7 @@ const App: React.FC = () => {
       window.dispatchEvent(event);
   };
 
-  const handleStartMatching = () => {
+  const startMatchingProcess = () => {
     // CRITICAL: Initialize audio context on user gesture to ensure sounds play on iOS/Mobile
     initAudio();
 
@@ -158,6 +172,22 @@ const App: React.FC = () => {
     });
   };
 
+  const handleStartMatching = () => {
+      if (!isAgeVerified) {
+          setShowAgeGate(true);
+          return;
+      }
+      startMatchingProcess();
+  };
+
+  const handleAgeVerify = () => {
+      localStorage.setItem('stranger_age_verified', 'true');
+      setIsAgeVerified(true);
+      setShowAgeGate(false);
+      // Automatically start matching after verification
+      startMatchingProcess();
+  };
+
   const handleCancelMatching = () => {
     terminateSession();
     setAppState(AppState.LANDING);
@@ -185,6 +215,15 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen h-[100dvh] w-full flex flex-col bg-background text-foreground overflow-hidden transition-colors duration-500">
+      
+      {/* Age Gate Overlay - Triggered by button */}
+      {showAgeGate && (
+        <AgeGateModal 
+          onVerify={handleAgeVerify} 
+          onOpenRules={() => setShowRulesModal(true)} 
+        />
+      )}
+
       <Header 
         appState={appState} 
         onLeaveChat={handleLeaveChat} 
