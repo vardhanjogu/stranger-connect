@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>StrangerConnect</title>
     
     <!-- Google Analytics (GA4) -->
@@ -35,6 +35,7 @@
               'typing': 'typing 1.4s infinite ease-in-out both',
               'fade-in-up': 'fadeInUp 0.4s ease-out forwards',
               'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'float': 'float 10s ease-in-out infinite',
             },
             keyframes: {
               typing: {
@@ -44,6 +45,10 @@
               fadeInUp: {
                 '0%': { opacity: '0', transform: 'translateY(10px)' },
                 '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              float: {
+                '0%, 100%': { transform: 'translate(-50%, -50%) scale(1)' },
+                '50%': { transform: 'translate(-50%, -55%) scale(1.05)' },
               }
             },
           },
@@ -92,6 +97,7 @@
         background-color: var(--bg-color);
         color: var(--text-color);
         transition: background-color 0.5s ease, color 0.5s ease;
+        overscroll-behavior-y: none; /* Prevents pull-to-refresh on mobile */
       }
 
       /* Custom scrollbar for chat window */
@@ -116,7 +122,7 @@
 }
 </script>
 </head>
-  <body class="bg-background text-foreground antialiased overflow-hidden">
+  <body class="bg-background text-foreground antialiased overflow-hidden selection:bg-primary/30">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

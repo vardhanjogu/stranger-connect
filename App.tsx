@@ -38,9 +38,6 @@ const App: React.FC = () => {
 
   // Error Feedback
   const [errorFeedback, setErrorFeedback] = useState<string | null>(null);
-  
-  // Parallax State
-  const [scrollY, setScrollY] = useState(0);
 
   // Apply Theme Effect
   useEffect(() => {
@@ -90,28 +87,6 @@ const App: React.FC = () => {
     }
   }, [appState]);
 
-  // Scroll Listener for Parallax (Optimized & Fixed for Scroll Container)
-  useEffect(() => {
-      const el = mainRef.current;
-      if (!el || appState !== AppState.LANDING) return;
-
-      let ticking = false;
-      const handleScroll = () => {
-          if (!ticking) {
-              window.requestAnimationFrame(() => {
-                  if (el) {
-                      setScrollY(el.scrollTop);
-                  }
-                  ticking = false;
-              });
-              ticking = true;
-          }
-      };
-      
-      el.addEventListener('scroll', handleScroll, { passive: true });
-      return () => el.removeEventListener('scroll', handleScroll);
-  }, [appState]);
-
   // Handle ESC key
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
@@ -150,6 +125,9 @@ const App: React.FC = () => {
   const handleStartMatching = () => {
     // CRITICAL: Initialize audio context on user gesture to ensure sounds play on iOS/Mobile
     initAudio();
+
+    // Clear legacy chat history if it exists
+    localStorage.removeItem('stranger_connect_history');
 
     setAppState(AppState.MATCHING);
     setErrorFeedback(null);
@@ -192,6 +170,7 @@ const App: React.FC = () => {
   const confirmDisconnect = () => {
     terminateSession();
     playSound('disconnect');
+    localStorage.removeItem('stranger_connect_history');
     setAppState(AppState.LANDING);
     setShowDisconnectModal(false);
   };
@@ -245,12 +224,9 @@ const App: React.FC = () => {
           {appState === AppState.LANDING && (
             <div className="flex-1 flex flex-col items-center p-6 text-center animate-in fade-in zoom-in duration-300 pt-24 relative">
               
-              {/* Parallax Background Blob */}
+              {/* CSS-Only Floating Background Blob (High Performance) */}
               <div 
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-primary/20 via-purple-500/10 to-secondary/20 rounded-full blur-[120px] pointer-events-none transition-transform duration-100 ease-out will-change-transform"
-                style={{ 
-                    transform: `translate(-50%, calc(-50% + ${scrollY * 0.4}px))` 
-                }}
+                className="absolute top-1/2 left-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-primary/20 via-purple-500/10 to-secondary/20 rounded-full blur-[120px] pointer-events-none animate-float will-change-transform"
               ></div>
               
               <div className="flex flex-col items-center w-full max-w-3xl my-auto z-10">

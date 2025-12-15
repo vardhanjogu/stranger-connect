@@ -12,9 +12,6 @@ interface ChatInterfaceProps {
   onStartNewChat: () => void;
 }
 
-// Local Storage Key
-const STORAGE_KEY = 'stranger_connect_history';
-
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStartNewChat }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -26,6 +23,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<any>(null);
+  const lastTypingSentRef = useRef<number>(0);
   
   // Inactivity Timer Refs
   const lastActivityRef = useRef<number>(Date.now());
@@ -35,49 +33,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // 1. Load History on Mount
+  // 1. Initialize Chat on Mount
   useEffect(() => {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-          try {
-              const parsed = JSON.parse(stored);
-              // Take last 10 messages
-              const recent = parsed.slice(-10);
-              // Convert stored timestamps back to Date objects
-              const hydrated = recent.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
-              
-              // Only load if we have some reasonable history, else start fresh
-              if (hydrated.length > 0) {
-                  setMessages(hydrated);
-              } else {
-                  addSystemMessage("You are connected with a real stranger. Say hello!");
-              }
-          } catch (e) {
-              console.error("Failed to parse chat history", e);
-              addSystemMessage("You are connected with a real stranger. Say hello!");
-          }
-      } else {
-          addSystemMessage("You are connected with a real stranger. Say hello!");
-      }
+      addSystemMessage("You are connected with a real stranger. Say hello!");
       
       // Auto-focus input
+      // Slightly delayed for mobile animations to finish
       setTimeout(() => {
           inputRef.current?.focus();
-      }, 100);
+      }, 300);
   }, []);
 
-  // 2. Persist Messages
+  // 2. Scroll on new messages
   useEffect(() => {
-      if (messages.length > 0) {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-      }
       scrollToBottom();
   }, [messages, isTyping]);
-
-  // 3. Clear Storage Helper
-  const clearHistory = () => {
-      localStorage.removeItem(STORAGE_KEY);
-  };
 
   const addSystemMessage = (text: string) => {
       setMessages(prev => [...prev, {
@@ -116,7 +86,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
       terminateSession();
       playSound('disconnect');
       setIsChatActive(false);
-      clearHistory();
       setDisconnectReason("Connection timed out due to inactivity.");
       addSystemMessage("Connection timed out due to inactivity.");
   };
@@ -132,7 +101,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
             terminateSession();
             playSound('disconnect');
             setIsChatActive(false);
-            clearHistory();
             setDisconnectReason("Connection timed out due to inactivity.");
             addSystemMessage("Connection timed out due to inactivity.");
             return;
@@ -165,7 +133,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
 
         playSound('disconnect');
         setIsChatActive(false);
-        clearHistory();
         setDisconnectReason("Stranger has disconnected.");
         addSystemMessage("Stranger has disconnected.");
     };
@@ -184,12 +151,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       setInputText(e.target.value);
       
-      // Debounce typing status
+      // Debounced/Throttled typing status
       if (isChatActive) {
-          sendTypingStatus(true);
+          const now = Date.now();
+          // Only send "I'm typing" if we haven't sent it in the last 1 second
+          if (now - lastTypingSentRef.current > 1000) {
+              sendTypingStatus(true);
+              lastTypingSentRef.current = now;
+          }
           
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
           
+          // Send "Stopped typing" after 2 seconds of inactivity
           typingTimeoutRef.current = setTimeout(() => {
               sendTypingStatus(false);
           }, 2000);
@@ -217,6 +190,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
     // Clear typing status immediately
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     sendTypingStatus(false);
+    lastTypingSentRef.current = 0; // Reset throttle
 
     try {
       await sendMessageToStranger(userMsg.text);
@@ -226,7 +200,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
   };
 
   const handleEndChat = () => {
-      clearHistory();
       onEndChat();
   };
 
@@ -254,7 +227,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
 
       <div className="flex flex-col flex-1 min-h-0 w-full max-w-3xl mx-auto pt-16">
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide active:scrollbar-default touch-pan-y">
           
           {/* Chat Top Ad */}
           <AdUnit label="Support StrangerConnect" className="mb-6 opacity-80 hover:opacity-100 transition-opacity" />
@@ -291,7 +264,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
           })}
           
           {/* Dynamic Typing Indicator Container */}
-          {/* Changed transition-opacity to have a longer duration for smoothness */}
           <div className={`flex justify-start transition-all duration-500 ease-in-out transform ${isTyping ? 'opacity-100 translate-y-0 max-h-20' : 'opacity-0 translate-y-4 max-h-0 overflow-hidden'}`}>
              <TypingIndicator />
           </div>
@@ -303,11 +275,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
         <div className="p-4 bg-background/90 backdrop-blur border-t border-border pb-[env(safe-area-inset-bottom,20px)]">
           {isChatActive ? (
               <div className="flex flex-col gap-2">
-                <form onSubmit={handleSendMessage} className="flex gap-2">
+                <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
                     <button
                         type="button"
                         onClick={() => setShowReportModal(true)}
-                        className="p-3 rounded-full bg-surface border border-border text-slate-400 hover:text-red-400 hover:border-red-500/30 transition-colors"
+                        className="p-3 rounded-full bg-surface border border-border text-slate-400 hover:text-red-400 hover:border-red-500/30 transition-colors active:scale-95"
                         title="Report User"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -321,7 +293,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
                         value={inputText}
                         onChange={handleInputChange}
                         placeholder="Type a message..."
-                        className="flex-1 bg-surface border border-border text-foreground rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder-slate-500 disabled:opacity-50"
+                        enterKeyHint="send"
+                        autoCapitalize="sentences"
+                        className="flex-1 bg-surface border border-border text-foreground rounded-full px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder-slate-500 disabled:opacity-50"
                     />
                     <Button 
                         type="submit" 
@@ -334,8 +308,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
                     </Button>
                 </form>
                 <div className="text-center">
-                    <button onClick={handleEndChat} className="text-xs font-medium text-red-500 hover:text-red-400 transition-colors">
-                        Stop this chat (ESC)
+                    <button onClick={handleEndChat} className="text-xs font-medium text-red-500 hover:text-red-400 transition-colors px-2 py-1">
+                        Stop this chat <span className="hidden sm:inline">(ESC)</span>
                     </button>
                 </div>
               </div>
