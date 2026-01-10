@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://strangerconnect.site/sitemap.xml
