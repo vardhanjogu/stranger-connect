@@ -11,13 +11,13 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose, title =
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-darker/95 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-darker/95 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
         
         {/* Header */}
         <div className="p-6 border-b border-white/5 flex justify-between items-center sticky top-0 bg-slate-900 rounded-t-2xl z-10">
-          <h2 className="text-2xl font-bold text-white tracking-tight">{title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{title}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors p-2">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -25,83 +25,67 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose, title =
         </div>
 
         {/* Scrollable Content */}
-        <div className="overflow-y-auto p-6 space-y-8 scrollbar-hide text-slate-300 leading-relaxed">
+        <div className="overflow-y-auto p-6 space-y-10 scrollbar-hide text-slate-300 leading-relaxed">
           
-          {/* CRITICAL SAFETY RULES */}
-          <section className="bg-red-500/5 border border-red-500/20 p-5 rounded-xl">
-            <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2 uppercase tracking-wide">
-               ⚠️ Zero Tolerance Policy
+          {/* TERMS OF SERVICE */}
+          <section id="terms">
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <span className="text-primary">⚖️</span> Terms of Service
             </h3>
-            <p className="text-sm mb-4 text-slate-300">
-                To protect our community and ensure compliance with international law, the following activities result in an <strong>immediate permanent ban</strong> and potential reporting to authorities:
-            </p>
-            <ul className="space-y-3 text-sm font-medium text-white">
-                <li className="flex items-start gap-3">
-                    <span className="text-red-500 mt-0.5">✕</span>
-                    <span><strong>Sexual Content:</strong> Nudity, pornography, sexual solicitation, or "sexting" is strictly prohibited.</span>
-                </li>
-                <li className="flex items-start gap-3">
-                    <span className="text-red-500 mt-0.5">✕</span>
-                    <span><strong>Harassment & Hate Speech:</strong> Bullying, racism, threats, or abuse of any kind will not be tolerated.</span>
-                </li>
-                <li className="flex items-start gap-3">
-                    <span className="text-red-500 mt-0.5">✕</span>
-                    <span><strong>Illegal Activity:</strong> Promotion of drugs, weapons, fraud, or any illegal acts.</span>
-                </li>
-                <li className="flex items-start gap-3">
-                    <span className="text-red-500 mt-0.5">✕</span>
-                    <span><strong>Minors:</strong> Users under 18 are not permitted. Soliciting minors is a crime and will be reported to the National Center for Missing & Exploited Children (NCMEC).</span>
-                </li>
-            </ul>
-          </section>
-
-          {/* Privacy Policy (Compliance) */}
-           <section>
-            <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-              <span className="text-secondary">🔒</span> Privacy & Data Logging Policy
-            </h3>
-            <p className="text-sm mb-3">
-                We value your privacy, but we must also ensure safety. Here is exactly what we track:
-            </p>
-             <ul className="list-disc pl-5 space-y-2 text-sm">
-                <li>
-                    <strong>What we log:</strong> We record IP addresses, connection timestamps, and device identifiers (User-Agent) for security and anti-abuse purposes.
-                </li>
-                <li>
-                    <strong>Chat Content:</strong> Chats are primarily Peer-to-Peer (P2P). However, chats may be <strong>moderated or logged</strong> via automated systems or if a user report is triggered, to prevent illegal activity and ensure safety.
-                </li>
-                <li>
-                    <strong>Data Retention:</strong> Security logs (IPs) are retained for a limited period to enforce bans and assist law enforcement if required by a valid legal process.
-                </li>
-                <li>
-                    <strong>Cookies:</strong> We use cookies for analytics and ads (Google AdSense/Analytics). You can opt-out via <a href="https://policies.google.com/technologies/ads" target="_blank" rel="noreferrer" className="text-primary hover:underline">Google Ad Settings</a>.
-                </li>
-            </ul>
-          </section>
-
-          {/* Safety Advice */}
-          <section>
-            <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-              <span className="text-primary">🛡️</span> User Safety Guide
-            </h3>
-            <div className="text-sm space-y-4 text-slate-300">
-                <p>
-                    <strong>Anonymity is not a shield.</strong> Bad actors exist. Protect yourself:
-                </p>
+            <div className="text-sm space-y-4">
+                <p>By using StrangerConnect, you agree to the following terms:</p>
                 <ul className="list-disc pl-5 space-y-2">
-                    <li><strong>Never share PII:</strong> No real names, addresses, phone numbers, or social handles.</li>
-                    <li><strong>Scam Alert:</strong> Anyone asking for money (crypto, gift cards) is a scammer. Block them.</li>
-                    <li><strong>Sextortion Warning:</strong> Never send intimate images. Scammers record video calls to blackmail victims.</li>
-                    <li><strong>Report:</strong> If you feel unsafe, use the Report button. We take every report seriously.</li>
+                    <li>You must be at least <strong>18 years of age</strong> to use this service.</li>
+                    <li>You are solely responsible for your interactions and any content you transmit.</li>
+                    <li>You agree not to use the service for illegal purposes, harassment, or distribution of prohibited content.</li>
+                    <li>StrangerConnect provides the service "as-is" and is not liable for any user behavior or technical failures.</li>
+                    <li>Violation of these terms will result in an immediate and permanent ban.</li>
                 </ul>
             </div>
           </section>
 
+          {/* PRIVACY POLICY */}
+          <section id="privacy">
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <span className="text-secondary">🔒</span> Privacy Policy
+            </h3>
+            <div className="text-sm space-y-4">
+                <p>Your privacy is our priority. We operate under a strict <strong>No-Storage</strong> policy for conversations.</p>
+                <ul className="list-disc pl-5 space-y-2">
+                    <li><strong>Ephemeral Data:</strong> Chat messages are sent Peer-to-Peer and are deleted from your memory once the session ends. They are never stored on our servers.</li>
+                    <li><strong>Security Logs:</strong> We log IP addresses and device signatures temporarily solely to prevent spam, abuse, and illegal activity. This data is pruned regularly.</li>
+                    <li><strong>Third Parties:</strong> We use Google Analytics and Microsoft Clarity to understand site performance. No personal chat data is ever shared with these providers.</li>
+                    <li><strong>Cookie Use:</strong> We use essential cookies to maintain your theme preferences and session state.</li>
+                </ul>
+            </div>
+          </section>
+
+          {/* CRITICAL SAFETY RULES */}
+          <section className="bg-red-500/5 border border-red-500/20 p-5 rounded-xl">
+            <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2 uppercase tracking-wide">
+               ⚠️ Zero Tolerance Safety Policy
+            </h3>
+            <ul className="space-y-3 text-sm font-medium text-white">
+                <li className="flex items-start gap-3">
+                    <span className="text-red-500 mt-0.5">✕</span>
+                    <span><strong>No Sexual Content:</strong> Nudity, pornography, or sexual solicitation is strictly prohibited.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                    <span className="text-red-500 mt-0.5">✕</span>
+                    <span><strong>No Harassment:</strong> Hate speech, bullying, or threats will be reported.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                    <span className="text-red-500 mt-0.5">✕</span>
+                    <span><strong>No Illegal Activity:</strong> Fraud, drug solicitation, or minor exploitation.</span>
+                </li>
+            </ul>
+          </section>
+
           {/* Contact */}
-          <section className="border-t border-white/5 pt-4">
+          <section className="border-t border-white/5 pt-6">
              <p className="text-xs text-slate-500">
-                For legal inquiries or to report a violation: <br/>
-                <span className="text-slate-300 font-mono">contact@strangerconnect.com</span>
+                Contact our safety team: <br/>
+                <span className="text-slate-300 font-mono">legal@strangerconnect.com</span>
              </p>
           </section>
 
@@ -110,7 +94,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose, title =
         {/* Footer */}
         <div className="p-6 border-t border-white/5 bg-slate-900 rounded-b-2xl sticky bottom-0 backdrop-blur-xl">
           <Button onClick={onClose} className="w-full">
-            I Acknowledge & Agree
+            Acknowledge & Agree
           </Button>
         </div>
 

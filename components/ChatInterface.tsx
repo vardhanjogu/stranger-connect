@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Message } from '../types';
-import { sendMessageToStranger, sendTypingStatus, sendSignal, terminateSession } from '../services/geminiService';
+import { sendMessageToStranger, sendTypingStatus, terminateSession } from '../services/geminiService';
 import { playSound } from '../services/soundService';
 import { Button } from './Button';
 import { AdUnit } from './AdUnit';
@@ -19,122 +19,52 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
   const [disconnectReason, setDisconnectReason] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const typingTimeoutRef = useRef<any>(null);
-  const lastTypingSentRef = useRef<number>(0);
-  
-  // Inactivity Timer Refs
-  const lastActivityRef = useRef<number>(Date.now());
-  const timeoutTriggeredRef = useRef<boolean>(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // 1. Initialize Chat on Mount
   useEffect(() => {
-      addSystemMessage("You are connected with a real stranger. Say hello!");
-      
-      // Auto-focus input
-      // Slightly delayed for mobile animations to finish
-      setTimeout(() => {
-          inputRef.current?.focus();
-      }, 300);
+    addSystemMessage("Matched with a stranger. Say hey.");
+    setTimeout(() => inputRef.current?.focus(), 500);
   }, []);
 
-  // 2. Scroll on new messages
   useEffect(() => {
-      scrollToBottom();
+    scrollToBottom();
   }, [messages, isTyping]);
 
   const addSystemMessage = (text: string) => {
-      setMessages(prev => [...prev, {
-          id: 'sys-' + Date.now(),
-          role: 'model',
-          text: text,
-          timestamp: new Date()
-      }]);
-  };
-
-  // Inactivity Check Interval (Auto-Disconnect)
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-        if (isChatActive && !timeoutTriggeredRef.current) {
-            const idleTime = Date.now() - lastActivityRef.current;
-            if (idleTime > 60000) { // 60 seconds of silence from BOTH sides
-                handleTimeout();
-            }
-        }
-    }, 1000);
-
-    return () => clearInterval(intervalId);
-  }, [isChatActive]);
-
-  const handleTimeout = async () => {
-      if (timeoutTriggeredRef.current) return;
-      timeoutTriggeredRef.current = true;
-
-      // Attempt to notify the other user before closing
-      try {
-          await sendSignal("TIMEOUT");
-      } catch (e) {
-          // Ignore errors
-      }
-
-      terminateSession();
-      playSound('disconnect');
-      setIsChatActive(false);
-      setDisconnectReason("Connection timed out due to inactivity.");
-      addSystemMessage("Connection timed out due to inactivity.");
+    setMessages(prev => [...prev, {
+      id: 'sys-' + Date.now() + Math.random(),
+      role: 'model',
+      text: text,
+      timestamp: new Date()
+    }]);
   };
 
   useEffect(() => {
-    // Listen for custom events dispatched by App.tsx (simple communication bridge)
     const handleIncomingMessage = (e: CustomEvent) => {
-        const text = e.detail;
-
-        if (text === "__TIMEOUT_SIGNAL__") {
-            if (timeoutTriggeredRef.current) return;
-            timeoutTriggeredRef.current = true;
-            terminateSession();
-            playSound('disconnect');
-            setIsChatActive(false);
-            setDisconnectReason("Connection timed out due to inactivity.");
-            addSystemMessage("Connection timed out due to inactivity.");
-            return;
-        }
-
-        // Reset activity timer
-        lastActivityRef.current = Date.now();
-        setIsTyping(false); // Stop typing animation immediately when message arrives
-
-        playSound('incoming');
-        setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'model', 
-            text: text,
-            timestamp: new Date()
-        }]);
+      if (e.detail === "__TIMEOUT_SIGNAL__") { handlePeerDisconnect(); return; }
+      setIsTyping(false);
+      playSound('incoming');
+      setMessages(prev => [...prev, {
+        id: 'msg-' + Date.now(),
+        role: 'model',
+        text: e.detail,
+        timestamp: new Date()
+      }]);
     };
 
-    const handleIncomingTyping = (e: CustomEvent) => {
-        const isPeerTyping = e.detail;
-        setIsTyping(isPeerTyping);
-        // Updating typing status also counts as activity to prevent timeout while someone is writing a long essay
-        if (isPeerTyping) {
-            lastActivityRef.current = Date.now(); 
-        }
-    };
-
+    const handleIncomingTyping = (e: CustomEvent) => setIsTyping(e.detail);
     const handlePeerDisconnect = () => {
-        if (timeoutTriggeredRef.current) return;
-
-        playSound('disconnect');
-        setIsChatActive(false);
-        setDisconnectReason("Stranger has disconnected.");
-        addSystemMessage("Stranger has disconnected.");
+      setIsChatActive(false);
+      setDisconnectReason("They ghosted.");
+      addSystemMessage("Session closed.");
+      playSound('disconnect');
     };
 
     window.addEventListener('peer-message', handleIncomingMessage as EventListener);
@@ -142,191 +72,155 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onEndChat, onStart
     window.addEventListener('peer-disconnect', handlePeerDisconnect as EventListener);
 
     return () => {
-        window.removeEventListener('peer-message', handleIncomingMessage as EventListener);
-        window.removeEventListener('peer-typing', handleIncomingTyping as EventListener);
-        window.removeEventListener('peer-disconnect', handlePeerDisconnect as EventListener);
+      window.removeEventListener('peer-message', handleIncomingMessage as EventListener);
+      window.removeEventListener('peer-typing', handleIncomingTyping as EventListener);
+      window.removeEventListener('peer-disconnect', handlePeerDisconnect as EventListener);
     };
   }, []);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      setInputText(e.target.value);
-      
-      // Debounced/Throttled typing status
-      if (isChatActive) {
-          const now = Date.now();
-          // Only send "I'm typing" if we haven't sent it in the last 1 second
-          if (now - lastTypingSentRef.current > 1000) {
-              sendTypingStatus(true);
-              lastTypingSentRef.current = now;
-          }
-          
-          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-          
-          // Send "Stopped typing" after 2 seconds of inactivity
-          typingTimeoutRef.current = setTimeout(() => {
-              sendTypingStatus(false);
-          }, 2000);
-      }
-  };
-
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!inputText.trim() || !isChatActive) return;
+    const text = inputText.trim();
+    setInputText('');
+    setMessages(prev => [...prev, { id: 'me-' + Date.now(), role: 'user', text, timestamp: new Date() }]);
+    playSound('outgoing');
+    sendTypingStatus(false);
+    sendMessageToStranger(text);
+  };
 
-    // Reset activity timer on sending
-    lastActivityRef.current = Date.now();
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      text: inputText,
-      timestamp: new Date(),
+  const handleShare = async () => {
+    const shareData = {
+      title: 'StrangerConnect',
+      text: 'Talking to someone random on StrangerConnect. Join me?',
+      url: window.location.origin,
     };
 
-    setMessages(prev => [...prev, userMsg]);
-    setInputText('');
-    playSound('outgoing');
-    
-    // Clear typing status immediately
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    sendTypingStatus(false);
-    lastTypingSentRef.current = 0; // Reset throttle
-
-    try {
-      await sendMessageToStranger(userMsg.text);
-    } catch (error) {
-      console.error("Failed to send", error);
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        if (typeof window.gtag === 'function') window.gtag('event', 'share_native');
+      } catch (err) {}
+    } else {
+      handleCopyLink();
     }
   };
 
-  const handleEndChat = () => {
-      onEndChat();
-  };
-
-  const handleReportUser = () => {
-      console.log("REPORT_ACTION: User reported conversation", {
-          timestamp: new Date().toISOString(),
-          messageCount: messages.length
-      });
-      setShowReportModal(false);
-      alert("User reported. Thank you for helping keep StrangerConnect safe.");
-      if (isChatActive) {
-          handleEndChat();
-      }
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.origin);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'share_link_copied');
+    }
   };
 
   return (
-    <>
+    <div className="flex flex-col flex-1 h-full w-full max-w-2xl mx-auto pt-28 px-4 pb-6">
       <Modal 
         isOpen={showReportModal}
-        title="Report User"
-        message="Are you sure you want to report this user? This will log the incident and disconnect you."
-        onConfirm={handleReportUser}
+        title="Report for safety?"
+        message="This blocks the user and sends an incident report. Conversation ends now."
+        onConfirm={() => {
+            if (typeof window.gtag === 'function') window.gtag('event', 'user_report');
+            setShowReportModal(false);
+            onEndChat();
+        }}
         onCancel={() => setShowReportModal(false)}
       />
 
-      <div className="flex flex-col flex-1 min-h-0 w-full max-w-3xl mx-auto pt-16">
-        {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide active:scrollbar-default touch-pan-y">
+      <div className="flex-1 overflow-y-auto space-y-6 pb-4 scrollbar-hide">
+        {messages.map((msg) => {
+          const isMe = msg.role === 'user';
+          const isSystem = msg.id.startsWith('sys-');
           
-          {/* Chat Top Ad */}
-          <AdUnit label="Support StrangerConnect" className="mb-6 opacity-80 hover:opacity-100 transition-opacity" />
+          if (isSystem) return (
+            <div key={msg.id} className="flex justify-center my-10">
+              <span className="text-[10px] font-black uppercase tracking-[0.4em] text-white/20 px-8 py-2 border-y border-white/5">
+                {msg.text}
+              </span>
+            </div>
+          );
 
-          {messages.map((msg, index) => {
-              const isMe = msg.role === 'user';
-              const isSystem = msg.text.includes("You are connected") || 
-                              msg.text.includes("Stranger has disconnected") || 
-                              msg.text.includes("Connection timed out");
-              
-              if (isSystem) {
-                  return (
-                      <div key={msg.id} className="flex justify-center my-4 animate-fade-in-up">
-                          <span className="text-xs font-medium text-slate-500 bg-surface/80 px-3 py-1 rounded-full border border-border">
-                              {msg.text}
-                          </span>
-                      </div>
-                  );
-              }
-
-              return (
-                  <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
-                      <div 
-                          className={`max-w-[85%] md:max-w-[75%] px-4 py-2 rounded-2xl shadow-sm text-sm md:text-base leading-relaxed break-words ${
-                          isMe 
-                              ? 'bg-primary text-white rounded-tr-sm' 
-                              : 'bg-surface text-foreground rounded-tl-sm border border-border'
-                          }`}
-                      >
-                          {msg.text}
-                      </div>
-                  </div>
-              );
-          })}
-          
-          {/* Dynamic Typing Indicator Container */}
-          <div className={`flex justify-start transition-all duration-500 ease-in-out transform ${isTyping ? 'opacity-100 translate-y-0 max-h-20' : 'opacity-0 translate-y-4 max-h-0 overflow-hidden'}`}>
-             <TypingIndicator />
-          </div>
-          
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Area */}
-        <div className="p-4 bg-background/90 backdrop-blur border-t border-border pb-[env(safe-area-inset-bottom,20px)]">
-          {isChatActive ? (
-              <div className="flex flex-col gap-2">
-                <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
-                    <button
-                        type="button"
-                        onClick={() => setShowReportModal(true)}
-                        className="p-3 rounded-full bg-surface border border-border text-slate-400 hover:text-red-400 hover:border-red-500/30 transition-colors active:scale-95"
-                        title="Report User"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
-                            <line x1="4" y1="22" x2="4" y2="15"></line>
-                        </svg>
-                    </button>
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        value={inputText}
-                        onChange={handleInputChange}
-                        placeholder="Type a message..."
-                        enterKeyHint="send"
-                        autoCapitalize="sentences"
-                        className="flex-1 bg-surface border border-border text-foreground rounded-full px-5 py-3 text-base focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder-slate-500 disabled:opacity-50"
-                    />
-                    <Button 
-                        type="submit" 
-                        disabled={!inputText.trim()}
-                        className="!px-4 !py-3 rounded-full"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                            <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-                        </svg>
-                    </Button>
-                </form>
-                <div className="text-center">
-                    <button onClick={handleEndChat} className="text-xs font-medium text-red-500 hover:text-red-400 transition-colors px-2 py-1">
-                        Stop this chat <span className="hidden sm:inline">(ESC)</span>
-                    </button>
-                </div>
+          return (
+            <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2 duration-300`}>
+              <div className={`px-6 py-4 rounded-[2rem] text-lg font-bold max-w-[85%] ${
+                isMe ? 'bg-primary text-black rounded-tr-sm' : 'glass text-white rounded-tl-sm'
+              }`}>
+                {msg.text}
               </div>
-          ) : (
-              <div className="flex flex-col gap-3 animate-fade-in-up">
-                  {disconnectReason && (
-                      <div className="text-center text-amber-500 font-medium text-sm bg-amber-500/10 py-2 rounded-lg border border-amber-500/20">
-                          {disconnectReason}
-                      </div>
-                  )}
-                  <Button onClick={onStartNewChat} className="w-full" variant="secondary">
-                      Find New Stranger
-                  </Button>
-              </div>
-          )}
-        </div>
+            </div>
+          );
+        })}
+        {isTyping && <div className="flex justify-start"><TypingIndicator /></div>}
+        <div ref={messagesEndRef} />
       </div>
-    </>
+
+      <div className="mt-4">
+        {isChatActive ? (
+          <form onSubmit={handleSendMessage} className="flex gap-3 glass p-2 rounded-[2.5rem] shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setShowReportModal(true)}
+              className="w-12 h-12 flex items-center justify-center text-white/30 hover:text-red-500 transition-colors"
+            >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            </button>
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputText}
+              onChange={(e) => {
+                setInputText(e.target.value);
+                sendTypingStatus(e.target.value.length > 0);
+              }}
+              placeholder="Vibe check..."
+              className="flex-1 bg-transparent border-none text-white px-4 py-3 text-lg focus:outline-none placeholder:text-white/20"
+            />
+            <button 
+              type="submit" 
+              disabled={!inputText.trim()}
+              className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-black disabled:opacity-20 active:scale-90 transition-transform"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" /></svg>
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-4 animate-in fade-in zoom-in duration-300">
+            {/* Week 4: Monetization on End-of-Chat */}
+            <AdUnit className="mb-4" />
+
+            <div className="p-8 glass rounded-[3rem] text-center space-y-6">
+                <h3 className="text-4xl font-black italic uppercase tracking-tighter text-white/40">{disconnectReason}</h3>
+                
+                {/* Week 3: Viral Loop Refined */}
+                <div className="bg-white/5 p-6 rounded-[2.5rem] border border-white/5 space-y-6">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-white/30">Did they pass the vibe check? Share the link.</p>
+                    
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={handleShare}
+                            className="flex-1 py-4 bg-primary text-black rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+                        >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-4 h-4"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                            Invite
+                        </button>
+                        <button 
+                            onClick={() => window.open(`https://wa.me/?text=Vibe%20check%20with%20strangers%20on%20${window.location.origin}`)}
+                            className="w-14 py-4 bg-green-500 text-white rounded-2xl flex items-center justify-center"
+                        >
+                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <Button onClick={onStartNewChat} className="w-full text-3xl py-10 rounded-[2.5rem]">
+                    New Stranger
+                </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
